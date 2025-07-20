@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Faruk Web - Ana Sayfa</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<style>
+  /* Stil aynı, önceki gönderideki CSS kodunu kullanabilirsiniz */
+  body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f5f5f5; }
+  header { background:#222; color:#fff; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-weight: normal; font-size: 1.5em; }
+  nav a {
+    color:#fff; margin-left:15px; text-decoration:none; font-weight:bold; cursor:pointer;
+  }
+  #cart-toggle { font-size:24px; background:none; border:none; color:#fff; cursor:pointer; position:relative; margin-left:15px; }
+  #cart-count { position:absolute; top:-8px; right:-10px; background:red; border-radius:50%; padding:2px 7px; font-size:12px; }
+  #auth-container { padding: 20px; max-width: 360px; margin: 30px auto; background: white; border-radius:8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  #auth-container input, #auth-container button { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; border-radius: 5px; border: 1px solid #ccc; }
+  #auth-container button { background:#28a745; color:#fff; border:none; cursor:pointer; font-weight:bold; }
+  #auth-message { min-height: 22px; margin-top: 10px; color: red; font-size: 0.9em; }
+
+  #product-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; padding: 20px; max-width: 1024px; margin: auto; }
+  .product { background: white; border-radius: 8px; width: 180px; box-shadow: 0 0 6px rgba(0,0,0,0.1); padding: 10px; text-align: center; }
+  .product img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; }
+  .product h3 { font-size: 1.1em; margin: 8px 0 4px; }
+  .product p { margin: 4px 0; color: #666; font-size: 0.9em; }
+  .product button { margin-top: 10px; padding: 8px 12px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+
+  aside#cart-sidebar {
+    position: fixed; top: 60px; right: 15px; width: 320px; max-height: 75vh; background: white;
+    box-shadow: 0 0 12px rgba(0,0,0,0.2); border-radius: 8px; padding: 15px; overflow-y: auto;
+    display: none; z-index: 9999;
+  }
+  aside#cart-sidebar h2 { margin-top: 0; font-weight: normal; }
+  #cart-items div {
+    border-bottom: 1px solid #ddd; padding: 10px 0; display:flex; justify-content: space-between; align-items:center;
+  }
+  #cart-items div:last-child { border-bottom:none; }
+  .qty-controls button {
+    padding: 4px 10px; margin: 0 5px; cursor: pointer; border: 1px solid #ccc; background: #f0f0f0; border-radius: 4px;
+  }
+  #cart-close { float:right; background:none; border:none; font-size: 24px; cursor:pointer; }
+  #cart-total { font-weight: bold; margin-top: 10px; font-size: 1.1em; }
+  #clear-cart-btn {
+    background:#ffc107; border:none; color:#222; padding: 8px 15px;
+    cursor:pointer; border-radius: 5px; width: 100%; font-weight: bold; margin-bottom:10px;
+  }
+  #logoutBtn { margin-top: 12px; background:#dc3545; border:none; color:#fff; padding: 8px 15px; cursor:pointer; border-radius: 5px; width: 100%; font-weight: bold; }
+
+  @media(max-width:480px) {
+    #product-list { justify-content: center; }
+    aside#cart-sidebar { width: 90vw; right: 5vw; top: 60px; max-height: 60vh; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Faruk Web</h1>
+  <nav>
+    <a href="index.html">Ana Sayfa</a>
+    <a href="contact.html">İletişim</a>
+  </nav>
+  <button id="cart-toggle" title="Sepeti Aç">🛒 Sepet <span id="cart-count">0</span></button>
+</header>
+
+<div id="auth-container">
+  <h2>Kayıt Ol</h2>
+  <input type="email" id="register-email" placeholder="Email" />
+  <input type="password" id="register-password" placeholder="Şifre" />
+  <button onclick="register()">Kayıt Ol</button>
+
+  <h2>Giriş Yap</h2>
+  <input type="email" id="login-email" placeholder="Email" />
+  <input type="password" id="login-password" placeholder="Şifre" />
+  <button onclick="login()">Giriş Yap</button>
+
+  <p id="auth-message"></p>
+</div>
+
+<main>
+  <div id="product-list"></div>
+</main>
+
+<aside id="cart-sidebar">
+  <button id="cart-close" title="Sepeti Kapat">×</button>
+  <h2>Sepetiniz</h2>
+  <div id="cart-items"></div>
+  <p>Toplam: <span id="cart-total">0 TL</span></p>
+  <button id="clear-cart-btn">Sepeti Temizle</button>
+  <button id="logoutBtn" onclick="logout()">Çıkış Yap</button>
+</aside>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAZaG2x8gKi5dYxWEdsQbF3mni4lZ4VfZI",
+    authDomain: "faruk-web.firebaseapp.com",
+    projectId: "faruk-web",
+    storageBucket: "faruk-web.firebasestorage.app",
+    messagingSenderId: "549634948218",
+    appId: "1:549634948218:web:51c017e2190fc61a6bcfc3",
+    measurementId: "G-JS7HD115G8"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  // Ziyaretçiyi Firestore'a kaydet
+  function logVisitor() {
+    const visitorData = {
+      timestamp: new Date(),
+      userAgent: navigator.userAgent,
+      url: window.location.href,
+      // Daha fazla info ekleyebilirsin, örn: IP (server-side gerektirir)
+    };
+    db.collection("visitors").add(visitorData)
+      .then(() => {
+        console.log("Ziyaretçi kaydedildi.");
+      })
+      .catch(e => {
+        console.error("Ziyaretçi kaydı hatası:", e);
+      });
+  }
+
+  // Ürünler localStorage'da (ilk yüklemede örnek ürün ekleme)
+  if (!localStorage.getItem("products")) {
+    const sampleProducts = [
+      { id: "1", name: "Ürün A", price: 100, image: "https://via.placeholder.com/180x120?text=Ürün+A" },
+      { id: "2", name: "Ürün B", price: 200, image: "https://via.placeholder.com/180x120?text=Ürün+B" },
+      { id: "3", name: "Ürün C", price: 300, image: "https://via.placeholder.com/180x120?text=Ürün+C" }
+    ];
+    localStorage.setItem("products", JSON.stringify(sampleProducts));
+  }
+
+  let products = JSON.parse(localStorage.getItem("products")) || [];
+  let cart = JSON.parse(localStorage.getItem("cart")) || [];
+
+  const authContainer = document.getElementById("auth-container");
+  const authMessage = document.getElementById("auth-message");
+  const productList = document.getElementById("product-list");
+  const cartToggle = document.getElementById("cart-toggle");
+  const cartSidebar = document.getElementById("cart-sidebar");
+  const cartClose = document.getElementById("cart-close");
+  const cartItems = document.getElementById("cart-items");
+  const cartTotal = document.getElementById("cart-total");
+  const cartCount = document.getElementById("cart-count");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const clearCartBtn = document.getElementById("clear-cart-btn");
+
+  function renderProducts() {
+    productList.innerHTML = "";
+    if(products.length === 0){
+      productList.innerHTML = "<p>Henüz ürün yok.</p>";
+      return;
+    }
+    products.forEach(p => {
+      const div = document.createElement("div");
+      div.className = "product";
+      div.innerHTML = `
+        <img src="${p.image}" alt="${p.name}" />
+        <h3>${p.name}</h3>
+        <p>${p.price} TL</p>
+        <button onclick="addToCart('${p.id}')">Sepete Ekle</button>
+      `;
+      productList.appendChild(div);
+    });
+  }
+
+  function renderCart() {
+    cartItems.innerHTML = "";
+    if(cart.length === 0) {
+      cartItems.innerHTML = "<p>Sepetiniz boş.</p>";
+      cartCount.textContent = "0";
+      cartTotal.textContent = "0 TL";
+      return;
+    }
+
+    let total = 0;
+    let totalQty = 0;
+    cart.forEach(ci => {
+      const p = products.find(pr => pr.id === ci.productId);
+      if(!p) return;
+
+      totalQty += ci.qty;
+      const itemTotal = p.price * ci.qty;
+      total += itemTotal;
+
+      const div = document.createElement("div");
+      div.innerHTML = `
+        <span>${p.name} - ${p.price} TL</span>
+        <div class="qty-controls">
+          <button onclick="changeQty('${ci.productId}', -1)">-</button>
+          <span>${ci.qty}</span>
+          <button onclick="changeQty('${ci.productId}', 1)">+</button>
+        </div>
+        <span>${itemTotal} TL</span>
+      `;
+      cartItems.appendChild(div);
+    });
+    cartCount.textContent = totalQty;
+    cartTotal.textContent = total + " TL";
+  }
+
+  function addToCart(productId) {
+    if(!auth.currentUser) {
+      alert("Lütfen önce giriş yapın.");
+      return;
+    }
+
+    const found = cart.find(c => c.productId === productId);
+    if(found) {
+      found.qty += 1;
+    } else {
+      cart.push({productId, qty:1});
+    }
+    saveCart();
+    renderCart();
+  }
+
+  function changeQty(productId, delta) {
+    const found = cart.find(c => c.productId === productId);
+    if(!found) return;
+    found.qty += delta;
+    if(found.qty <= 0) {
+      cart = cart.filter(c => c.productId !== productId);
+    }
+    saveCart();
+    renderCart();
+  }
+
+  function saveCart() {
+    localStorage.setItem("cart", JSON.stringify(cart));
+  }
+
+  function register() {
+    const email = document.getElementById("register-email").value.trim();
+    const password = document.getElementById("register-password").value.trim();
+    auth.createUserWithEmailAndPassword(email, password)
+      .then(() => {
+        authMessage.style.color = "green";
+        authMessage.textContent = "Kayıt başarılı, giriş yapabilirsiniz.";
+      })
+      .catch(e => {
+        authMessage.style.color = "red";
+        authMessage.textContent = e.message;
+      });
+  }
+
+  function login() {
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value.trim();
+    auth.signInWithEmailAndPassword(email, password)
+      .then(() => {
+        authMessage.style.color = "green";
+        authMessage.textContent = "Giriş başarılı!";
+      })
+      .catch(e => {
+        authMessage.style.color = "red";
+        authMessage.textContent = e.message;
+      });
+  }
+
+  function logout() {
+    auth.signOut();
+  }
+
+  function clearCart() {
+    if(confirm("Sepeti temizlemek istediğinizden emin misiniz?")) {
+      cart = [];
+      saveCart();
+      renderCart();
+    }
+  }
+
+  auth.onAuthStateChanged(user => {
+    if(user){
+      authContainer.style.display = "none";
+      cartToggle.style.display = "inline-block";
+      renderProducts();
+      renderCart();
+    } else {
+      authContainer.style.display = "block";
+      cartToggle.style.display = "none";
+      cartSidebar.style.display = "none";
+      authMessage.textContent = "";
+      cart = [];
+      saveCart();
+    }
+  });
+
+  cartToggle.addEventListener("click", () => {
+    if(cartSidebar.style.display === "block"){
+      cartSidebar.style.display = "none";
+    } else {
+      cartSidebar.style.display = "block";
+      renderCart();
+    }
+  });
+
+  cartClose.addEventListener("click", () => {
+    cartSidebar.style.display = "none";
+  });
+
+  clearCartBtn.addEventListener("click", clearCart);
+
+  window.onload = () => {
+    products = JSON.parse(localStorage.getItem("products")) || [];
+    cart = JSON.parse(localStorage.getItem("cart")) || [];
+    renderProducts();
+    renderCart();
+    logVisitor();  // Sayfa yüklendiğinde ziyaretçiyi kaydet
+  };
+</script>
+
+</body>
+</html>

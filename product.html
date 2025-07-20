@@ -1,0 +1,49 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ürün Detay</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Ürün Detayı</h1>
+    <a href="index.html">← Geri dön</a>
+  </header>
+  <main id="product-detail"></main>
+
+  <script src="products.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+    const product = products.find(p => p.id == id);
+    const detailEl = document.getElementById("product-detail");
+
+    if (product) {
+      detailEl.innerHTML = \`
+        <img src="\${product.image}" alt="\${product.name}" />
+        <h2>\${product.name}</h2>
+        <p>\${product.description}</p>
+        <p><strong>Fiyat: \${product.price} TL</strong></p>
+        <button onclick="addToCart(\${product.id})">Sepete Ekle</button>
+      \`;
+    } else {
+      detailEl.innerHTML = "<p>Ürün bulunamadı.</p>";
+    }
+
+    function addToCart(id) {
+      let cart = JSON.parse(localStorage.getItem("cart")) || [];
+      const existing = cart.find(p => p.id === id);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        cart.push({ id, qty: 1 });
+      }
+      localStorage.setItem("cart", JSON.stringify(cart));
+      alert("Ürün sepete eklendi!");
+    }
+  </script>
+</body>
+</html>

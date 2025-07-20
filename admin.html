@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin Paneli - Ürün Yönetimi & Ziyaretçi İstatistikleri</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background:#f9f9f9; }
+  h1, h2 { margin-bottom: 20px; }
+  #loginContainer, #adminPanel { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  #loginContainer input, #adminPanel input { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; border-radius: 5px; border: 1px solid #ccc; }
+  #loginContainer button, #adminPanel button { padding: 10px 15px; border:none; background: #007bff; color:white; cursor:pointer; border-radius: 5px; }
+  #adminPanel button#logout { background: #dc3545; margin-top: 10px; }
+  #productList, #visitorList { margin-top: 20px; max-height: 250px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 6px; background:#fff; }
+  .productItem, .visitorItem { border-bottom: 1px solid #eee; padding: 8px 0; display:flex; align-items:center; justify-content: space-between; }
+  .productItem img { width: 60px; height: 50px; object-fit: cover; border-radius: 4px; }
+  .productItem div { flex: 1; margin-left: 10px; }
+  .productItem button { background:#dc3545; border:none; padding: 6px 10px; color:#fff; cursor:pointer; border-radius: 4px; }
+  #message { color: red; min-height: 20px; margin-top: 10px; }
+  small { color: #555; display: block; margin-top: -6px; margin-bottom: 12px; font-size: 12px; }
+</style>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+</head>
+<body>
+
+<!-- Login -->
+<div id="loginContainer">
+  <h2>Admin Giriş</h2>
+  <input type="text" id="adminUser" placeholder="Kullanıcı Adı" autocomplete="username" />
+  <input type="password" id="adminPass" placeholder="Şifre" autocomplete="current-password" />
+  <button id="loginBtn">Giriş</button>
+  <p id="message"></p>
+</div>
+
+<!-- Admin Panel -->
+<div id="adminPanel" style="display:none;">
+  <h1>Admin Paneli</h1>
+  
+  <h2>Ziyaretçi İstatistikleri</h2>
+  <div id="visitorList">Yükleniyor...</div>
+  
+  <hr style="margin: 30px 0;" />
+  
+  <h2>Ürün Yönetimi</h2>
+  
+  <input type="text" id="newName" placeholder="Ürün Adı" />
+  <input type="number" id="newPrice" placeholder="Fiyat (TL)" />
+  <input type="text" id="newDesc" placeholder="Açıklama" />
+  <input type="text" id="newImageUrl" placeholder="Resim URL (opsiyonel)" />
+  <input type="file" id="newImageFile" accept="image/*" />
+  <small>Max dosya boyutu: 1MB</small>
+  
+  <button id="addBtn">Ürün Ekle</button>
+  
+  <div id="productList"></div>
+  <button id="logout" style="background:#dc3545; color:#fff; margin-top:10px;">Çıkış Yap</button>
+</div>
+
+<script>
+  // Firebase config (kendi projenin bilgileriyle değiştir)
+  const firebaseConfig = {
+    apiKey: "AIzaSyDwo0u4OBpmoe3Y2_6maonEPv2B5g7QbFk",
+    authDomain: "izleme-169f4.firebaseapp.com",
+    projectId: "izleme-169f4",
+    storageBucket: "izleme-169f4.firebasestorage.app",
+    messagingSenderId: "1036220243281",
+    appId: "1:1036220243281:web:65dd1f6b9f5e7280f04770",
+    measurementId: "G-2JCMP6Z6X7"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const ADMIN_USER = "admin";
+  const ADMIN_PASS = "1234";
+
+  let uploadedImageBase64 = null;
+
+  // Giriş butonu olayı
+  document.getElementById("loginBtn").addEventListener("click", function() {
+    const user = document.getElementById("adminUser").value.trim();
+    const pass = document.getElementById("adminPass").value;
+    const message = document.getElementById("message");
+    const loginContainer = document.getElementById("loginContainer");
+    const adminPanel = document.getElementById("adminPanel");
+
+    if(user === ADMIN_USER && pass === ADMIN_PASS) {
+      message.textContent = "";
+      loginContainer.style.display = "none";
+      adminPanel.style.display = "block";
+      loadVisitors();
+      loadProducts();
+    } else {
+      message.textContent = "Hatalı kullanıcı adı veya şifre!";
+    }
+  });
+
+  // Çıkış butonu olayı
+  document.getElementById("logout").addEventListener("click", function() {
+    document.getElementById("loginContainer").style.display = "block";
+    document.getElementById("adminPanel").style.display = "none";
+    clearForm();
+  });
+
+  // Resim dosyası seçimi
+  document.getElementById('newImageFile').addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if(!file) {
+      uploadedImageBase64 = null;
+      return;
+    }
+    if(file.size > 1024 * 1024) {
+      alert('Dosya boyutu 1MB’den büyük olamaz.');
+      this.value = "";
+      uploadedImageBase64 = null;
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      uploadedImageBase64 = e.target.result;
+    }
+    reader.readAsDataURL(file);
+  });
+
+  // Ürün ekleme butonu
+  document.getElementById("addBtn").addEventListener("click", function() {
+    const name = document.getElementById("newName").value.trim();
+    const price = parseFloat(document.getElementById("newPrice").value);
+    const desc = document.getElementById("newDesc").value.trim();
+    const imageUrl = document.getElementById("newImageUrl").value.trim();
+
+    if(!name || isNaN(price)) {
+      alert("Lütfen ürün adı ve fiyatı doldurun.");
+      return;
+    }
+
+    const image = uploadedImageBase64 ? uploadedImageBase64 : imageUrl;
+
+    let products = JSON.parse(localStorage.getItem("products")) || [];
+
+    products.push({
+      id: Date.now().toString(),
+      name,
+      price,
+      desc,
+      image
+    });
+
+    localStorage.setItem("products", JSON.stringify(products));
+    loadProducts();
+    clearForm();
+    alert("Ürün eklendi!");
+  });
+
+  // Ürünleri yükle ve listele
+  function loadProducts() {
+    const list = document.getElementById("productList");
+    list.innerHTML = "";
+    let products = JSON.parse(localStorage.getItem("products")) || [];
+    if(products.length === 0){
+      list.innerHTML = "<p>Henüz ürün yok.</p>";
+      return;
+    }
+    products.forEach((p, i) => {
+      const div = document.createElement("div");
+      div.className = "productItem";
+      div.innerHTML = `
+        <img src="${p.image || 'https://via.placeholder.com/60x50?text=No+Image'}" alt="${p.name}" />
+        <div>
+          <strong>${p.name}</strong><br />
+          ${p.price} TL<br />
+          <small>${p.desc}</small>
+        </div>
+        <button onclick="deleteProduct(${i})">Sil</button>
+      `;
+      list.appendChild(div);
+    });
+  }
+
+  // Ürün sil
+  function deleteProduct(index) {
+    if(!confirm("Ürünü silmek istediğinize emin misiniz?")) return;
+    let products = JSON.parse(localStorage.getItem("products")) || [];
+    products.splice(index,1);
+    localStorage.setItem("products", JSON.stringify(products));
+    loadProducts();
+  }
+
+  // Formu temizle
+  function clearForm() {
+    document.getElementById("newName").value = "";
+    document.getElementById("newPrice").value = "";
+    document.getElementById("newDesc").value = "";
+    document.getElementById("newImageUrl").value = "";
+    document.getElementById("newImageFile").value = "";
+    uploadedImageBase64 = null;
+  }
+
+  // Firestore'dan ziyaretçi verilerini çek ve listele
+  function loadVisitors() {
+    const visitorList = document.getElementById("visitorList");
+    visitorList.textContent = "Yükleniyor...";
+
+    db.collection("visitors").get()
+      .then(snapshot => {
+        if(snapshot.empty) {
+          visitorList.textContent = "Ziyaretçi bulunamadı.";
+          return;
+        }
+        visitorList.innerHTML = "";
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const div = document.createElement("div");
+          div.className = "visitorItem";
+          // Eğer email veya lastLogin yoksa "Bilinmiyor" yaz
+          div.textContent = `Email: ${data.email || "Bilinmiyor"} - Son Giriş: ${data.lastLogin ? data.lastLogin.toDate().toLocaleString() : "Bilinmiyor"}`;
+          visitorList.appendChild(div);
+        });
+      })
+      .catch(err => {
+        visitorList.textContent = "Veriler yüklenirken hata oluştu: " + err.message;
+      });
+  }
+</script>
+
+</body>
+</html>
